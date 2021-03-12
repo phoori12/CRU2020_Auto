@@ -42,6 +42,8 @@ const int Direction_RS485 = 11;
 //dynamixel mx_18 serial2
 // gyro serial1
 
+//IntervalTimer rotatorTimer;
+
 //////// Smart Drive /////////
 union packed_int
 {
@@ -80,6 +82,21 @@ float h_edit, h_error = 0, h_preverror = 0, h_i = 0, h_d = 0;
 long targetTime = 0;
 ////////////////////////////////////////////////////////////
 
+//////////////////////// Rotator PID ////////////////////////
+int rotator_leftpos = 805;
+int rotator_midpos = 854;
+int rotator_rightpos = 900; // 900
+int rotator_maxSpeed = 400;
+
+float r_Kp = 10.0f, r_Kd = 2;
+float r_prev_error = 0;
+float r_error, r_p, r_d, r_edit;
+long r_ontarget;
+bool r_atTarget = false;
+
+////////////////////////////////////////////////////////////////
+
+volatile int rotatorPosition = rotator_midpos, feederPosition = AXFeed_min;
 /////////////// Function Declaration //////////////////////
 float degToRad(int val);
 void ENCLA_Read();
@@ -92,9 +109,12 @@ void headingControl(int spd, int course, int set_head);
 void p2ptrack(float set_x, float set_y, float set_head);
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4);
 void stopCmd();
-void writeToFeed(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
+void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
 void writeToRotator(int16_t speed, uint8_t id, uint8_t instruction, uint8_t Address);
-    ///////////////////////////////////////////////////////////
+void rotatorControl(int position, int speed);
+// void rotatorInterval();
+// void feederInterval();
+///////////////////////////////////////////////////////////
 
 void setup()
 {
@@ -148,34 +168,46 @@ void setup()
   delay(2000);
   digitalWrite(13, HIGH);
   /////////////////////////////
+ // rotatorTimer.begin(rotatorInterval, 10000);
   }
 
-  uint8_t gyro_offset = 3;
-  // 180 - > right
-  // 0 -> left
-  // 90 -> front
-  // 270 -> bacl
-  uint8_t AddressGoalPosition = 30;
-  uint8_t AddressMovingSpeed = 0x20;
-  uint8_t cmdWrite = 3;
-  uint8_t Dynamixel_feed = 1;
-  uint8_t Dynamixel_rotate = 1;
+uint8_t gyro_offset = 3;
+// 180 - > right
+// 0 -> left
+// 90 -> front
+// 270 -> bacl
+uint8_t AddressGoalPosition = 30;
+uint8_t AddressMovingSpeed = 0x20;
+uint8_t cmdWrite = 3;
+uint8_t Dynamixel_feed = 1;
+uint8_t Dynamixel_rotate = 1;
 
 // ลบหมุนขวา บวกหมุนซ้าย
-int rotator_leftpos = 810;
-int rotator_midpos = 854;
-int rotator_rightpos = 900;
+
+
 void loop() {
-    // writeToRotator(300, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-    // delay(1000);
-    // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-    // delay(1000);
-    // writeToRotator(-300, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-    // delay(1000);
-    // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-    // delay(1000);
-    Serial.println(analogRead(feedback_poten));
-    delay(50);
+  // feederPosition = AXFeed_max;
+  // rotatorPosition = rotator_leftpos;
+  /// 1st hole
+  // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+  // delay(500);
+  // rotatorControl(rotator_rightpos, rotator_maxSpeed);
+  // 2nd hole
+  // writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+  // delay(500);
+  // rotatorControl(rotator_midpos, rotator_maxSpeed);
+  // 3rd hole
+  // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+  // delay(500);
+  // rotatorControl(rotator_leftpos, rotator_maxSpeed);
+  // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+  // delay(1000);
+  // writeToRotator(-300, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+  // delay(1000);
+  // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+  // delay(1000);
+  // Serial.println(analogRead(feedback_poten));
+  //  delay(50);
     // writeToAX(0, Dynamixel_feed, cmdWrite, AddressGoalPosition);
     // delay(1000);
     // writeToAX(550, Dynamixel_feed, cmdWrite, AddressGoalPosition);
@@ -198,26 +230,110 @@ void loop() {
     // servo_right.write(servo_max);
     // delay(2000);
 
-    // p2ptrack(16, -62, 0); //x 16 y -62
-    // stopCmd();
-    // delay(100);
-    // p2ptrack(25, -62, 0); //x 25 y -62
-    // stopCmd();
-    // delay(100);
-    // while (1)
-    // {
-    //   getRobotPosition();
-    //   Serial.print(x_glob);
-    //   Serial.print("\t");
-    //   Serial.println(y_glob);
-    //   //stopCmd();
-    // }
+  rotatorControl(rotator_midpos, rotator_maxSpeed);
+  writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+  delay(500);
+  p2ptrack(16, -62, 0); //x 16 y -62
+  stopCmd();
+  delay(100);
+  p2ptrack(25, -62, 0); //x 25 y -62
+  stopCmd();
+  delay(100);
+  while (digitalRead(limit_r))
+  {
+    headingControl(1500, 180, 0);
   }
+    stopCmd();
+    delay(100);
+    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(500);
+    rotatorControl(rotator_rightpos, rotator_maxSpeed);
+    // servo_right.write(servo_max);
+    // delay(500);
+    //////////////////////////////
+    p2ptrack(16, -62, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    // servo_right.write(servo_def);
+    // delay(500);
+    p2ptrack(16, -102, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    p2ptrack(60, -102, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    p2ptrack(60, -95, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    while (digitalRead(limit_f))
+    {
+      headingControl(1500, 90, 0);
+    }
+    stopCmd();
+    delay(100);
+    writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(500);
+    rotatorControl(rotator_midpos, rotator_maxSpeed);
+    // servo_mid.write(servo_max);
+    // delay(500);
+    ///////////////////////////////////
+    p2ptrack(62, -102, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    // servo_mid.write(servo_def);
+    // delay(500);
+    p2ptrack(105, -102, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    p2ptrack(105, -62, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    p2ptrack(95, -62, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    while (digitalRead(limit_l))
+    {
+      headingControl(1500, 0, 0);
+    }
+    stopCmd();
+    delay(100);
+    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(500);
+    rotatorControl(rotator_leftpos, rotator_maxSpeed);
+    // servo_left.write(servo_max);
+    // delay(500);
+    p2ptrack(122, -65, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    // servo_left.write(servo_def);
+    // delay(500);
+    p2ptrack(122, -2, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    rotatorControl(rotator_midpos, rotator_maxSpeed);
+    writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(500);
+    while (1)
+    {
+      stopCmd();
+      getRobotPosition();
+      Serial.print(x_glob);
+      Serial.print("\t");
+      Serial.println(y_glob);
+      //stopCmd();
+    }
+  }
+
+// void rotatorInterval() 
+// {
+//   rotatorControl(rotatorPosition, rotator_maxSpeed);
+// }
 
   void stopCmd()
   {
     sendDriveCmd(0, 0, 0, 0);
   }
+
   void getRobotPosition()
   {
     static long od1_now = 0, od2_now = 0;
@@ -280,15 +396,15 @@ void loop() {
     if (abs(gyro_pos) - set_head > 4)
     {
       error = gyro_pos - set_head;
-      p = Kp * error;
-      d = (error - prev_error) * Kd;
-      prev_error = error;
     }
     else
     {
       error = 0;
       prev_error = 0;
     }
+    p = Kp * error;
+    d = (error - prev_error) * Kd;
+    prev_error = error;
     edit = p + d;
     omniControl(spd, course, edit);
   }
@@ -449,6 +565,52 @@ void loop() {
       // Serial.write(cmd[i]);
       Serial4.write(cmd[i]);
     }
+  }
+
+  void rotatorControl(int position, int speed)
+  {
+    while (1) {
+      int feedback = analogRead(feedback_poten);
+      // Serial.println(feedback- position);
+      if (abs(feedback - position) > 4)
+      {
+        r_error = feedback - position;
+      }
+      else
+      {
+        r_error = 0;
+        r_prev_error = 0;
+      }
+      r_p = r_Kp * r_error;
+      r_d = (r_error - r_prev_error) * r_Kd;
+      r_prev_error = r_error;
+      r_edit = r_p + r_d;
+      if (r_edit > rotator_maxSpeed)
+        r_edit = rotator_maxSpeed;
+      if (-r_edit < -rotator_maxSpeed)
+        r_edit = -rotator_maxSpeed;
+      if (r_edit == 0 && r_atTarget == false)
+      {
+        r_ontarget = millis();
+        r_atTarget = true;
+      }
+      else if (r_edit != 0)
+      {
+        r_atTarget = false;
+      }
+      if (millis() - r_ontarget > 500 && r_atTarget)
+      {
+        // atTarget = true;
+        writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+        r_atTarget = false;
+        break;
+      }
+      writeToRotator(r_edit, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+    }
+    
+    // Serial.println(r_edit);
+   
+    
   }
 
   void serialEvent1()
