@@ -32,6 +32,11 @@ Servo servo_mid;
 #define servo_max 180 // maximum servo span (retraction)
 #define servo_med 90  // medium servo span (released)
 #define servo_def 0 // defualt servo span (closed)
+
+#define AXFeed_max 550
+#define AXFeed_min 0
+
+const int Direction_RS485 = 11;
 //smart drive serial4
 //dynamixel ax_18 serial3
 //dynamixel mx_18 serial2
@@ -87,14 +92,19 @@ void headingControl(int spd, int course, int set_head);
 void p2ptrack(float set_x, float set_y, float set_head);
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4);
 void stopCmd();
-///////////////////////////////////////////////////////////
+void writeToFeed(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
+void writeToRotator(int16_t speed, uint8_t id, uint8_t instruction, uint8_t Address);
+    ///////////////////////////////////////////////////////////
 
 void setup()
 {
   Serial.begin(9600);
   Serial1.begin(115200); // Gyro Serial Init
+  Serial2.begin(57600);  // Dynamixel MX18
+  Serial3.begin(57600);  // Dynamixel AX18
   Serial4.begin(115200); // Smart Drive Serial Init
-  
+  pinMode(Direction_RS485, OUTPUT);
+  digitalWrite(Direction_RS485, HIGH); //send value
   /// Servo Init ///
   servo_right.attach(servo_r);
   servo_left.attach(servo_l);
@@ -103,12 +113,12 @@ void setup()
   servo_right.write(0);
   servo_mid.write(0);
   delay(2000);
-  pinMode(13 ,INPUT);
+  pinMode(13, INPUT);
   digitalWrite(13, LOW);
   //////// Switch Init ////////
   pinMode(sw_blue, INPUT); // Plan 1
   pinMode(sw_yell, INPUT); // Plan 2
-  pinMode(sw_red, INPUT); // Plan 3
+  pinMode(sw_red, INPUT);  // Plan 3
   //////// Bottom sensor init ////////
   pinMode(feedback_poten, INPUT); // analog potentiometer
   pinMode(object_f, INPUT);
@@ -138,300 +148,385 @@ void setup()
   delay(2000);
   digitalWrite(13, HIGH);
   /////////////////////////////
-  
-}
-
-
-int gyro_offset = 3;
-// 180 - > right
-// 0 -> left
-// 90 -> front 
-// 270 -> bacl
-void loop()
-{
-  // servo_left.write(servo_def);
-  // servo_mid.write(servo_def);
-  // servo_right.write(servo_def);
-  // delay(2000);
-  // servo_left.write(servo_med);
-  // servo_mid.write(servo_med);
-  // servo_right.write(servo_med);
-  // delay(2000);
-  // servo_left.write(servo_max);
-  // servo_mid.write(servo_max);
-  // servo_right.write(servo_max);
-  // delay(2000);
-
-
-  // p2ptrack(16, -62, 0); //x 16 y -62
-  // stopCmd();
-  // delay(100);
-  // p2ptrack(25, -62, 0); //x 25 y -62
-  // stopCmd();
-  // delay(100);
-  // while (1)
-  // {
-  //   getRobotPosition();
-  //   Serial.print(x_glob);
-  //   Serial.print("\t");
-  //   Serial.println(y_glob);
-  //   //stopCmd();
-  // }
-}
-
-void stopCmd() {
-  sendDriveCmd(0,0,0,0);
-}
-void getRobotPosition() {
-  static long od1_now = 0, od2_now = 0;
-  od1_now = ENCB_Count;
-  od2_now = ENCL_Count;
-
-  od1 = od1_now - last_od1;
-  od2 = od2_now - last_od2;
-  last_od1 = od1_now;
-  last_od2 = od2_now;
-  x_frame = od1 * xCon;
-  y_frame = od2 * yCon;
-
-  x_glob += (x_frame * cos(degToRad(gyro_pos)) - y_frame * sin(degToRad(gyro_pos)));
-  y_glob += (x_frame * sin(degToRad(gyro_pos)) + y_frame * cos(degToRad(gyro_pos)));
-  // Serial.print(gyro_pos);
-  // Serial.print("\t");
-  // Serial.print(x_glob);
-  // Serial.print("\t");
-  // Serial.println(y_glob);
-}
-
-void omniControl(int spd, int alpha, int omega) {
-  int w1, w2, w3, w4;
-  w1 = spd * cos(degToRad(135) - degToRad(alpha)) + omega; // 315
-  w2 = spd * cos(degToRad(225) - degToRad(alpha)) + omega; // 45
-  w3 = spd * cos(degToRad(315) - degToRad(alpha)) + omega; // 135
-  w4 = spd * cos(degToRad(45) - degToRad(alpha)) + omega; // 225
-
-  if (w1 > MAX_SPD)
-    w1 = MAX_SPD;
-  if (w1 < -MAX_SPD)
-    w1 = -MAX_SPD;
-  if (w2 > MAX_SPD)
-    w2 = MAX_SPD;
-  if (w2 < -MAX_SPD)
-    w2 = -MAX_SPD;
-  if (w3 > MAX_SPD)
-    w3 = MAX_SPD;
-  if (w3 < -MAX_SPD)
-    w3 = -MAX_SPD;
-  if (w4 > MAX_SPD)
-    w4 = MAX_SPD;
-  if (w4 < -MAX_SPD)
-    w4 = -MAX_SPD;
-  // Serial.print(w1);
-  // Serial.print("\t");
-  // Serial.print(w2);
-  // Serial.print("\t");
-  // Serial.print(w3);
-  // Serial.print("\t");
-  // Serial.println(w4);
-  
-  sendDriveCmd(w1, w2, w3, w4);
-}
-
-void headingControl(int spd, int course, int set_head) {
-  if (abs(gyro_pos) - set_head > 4)
-  {
-    error = gyro_pos - set_head;
-    p = Kp * error;
-    d = (error - prev_error) * Kd;
-    prev_error = error;
   }
-  else
-  {
-    error = 0;
-    prev_error = 0;
+
+  uint8_t gyro_offset = 3;
+  // 180 - > right
+  // 0 -> left
+  // 90 -> front
+  // 270 -> bacl
+  uint8_t AddressGoalPosition = 30;
+  uint8_t AddressMovingSpeed = 0x20;
+  uint8_t cmdWrite = 3;
+  uint8_t Dynamixel_feed = 1;
+  uint8_t Dynamixel_rotate = 1;
+
+// ลบหมุนขวา บวกหมุนซ้าย
+int rotator_leftpos = 810;
+int rotator_midpos = 854;
+int rotator_rightpos = 900;
+void loop() {
+    // writeToRotator(300, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+    // delay(1000);
+    // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+    // delay(1000);
+    // writeToRotator(-300, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+    // delay(1000);
+    // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+    // delay(1000);
+    Serial.println(analogRead(feedback_poten));
+    delay(50);
+    // writeToAX(0, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    // delay(1000);
+    // writeToAX(550, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+// left 810
+// mid 854
+// right 900
+    // while (1)
+    // {
+    // }
+    // servo_left.write(servo_def);
+    // servo_mid.write(servo_def);
+    // servo_right.write(servo_def);
+    // delay(2000);
+    // servo_left.write(servo_med);
+    // servo_mid.write(servo_med);
+    // servo_right.write(servo_med);
+    // delay(2000);
+    // servo_left.write(servo_max);
+    // servo_mid.write(servo_max);
+    // servo_right.write(servo_max);
+    // delay(2000);
+
+    // p2ptrack(16, -62, 0); //x 16 y -62
+    // stopCmd();
+    // delay(100);
+    // p2ptrack(25, -62, 0); //x 25 y -62
+    // stopCmd();
+    // delay(100);
+    // while (1)
+    // {
+    //   getRobotPosition();
+    //   Serial.print(x_glob);
+    //   Serial.print("\t");
+    //   Serial.println(y_glob);
+    //   //stopCmd();
+    // }
   }
-  edit = p + d;
-  omniControl(spd, course, edit);
-}
 
-void p2ptrack(float set_x, float set_y, float set_head) {
-
-  static volatile float s_prev_error = 0.0f;
-  static bool atTarget = false;
-  static float theta = 0;
-  while (1)
+  void stopCmd()
   {
+    sendDriveCmd(0, 0, 0, 0);
+  }
+  void getRobotPosition()
+  {
+    static long od1_now = 0, od2_now = 0;
+    od1_now = ENCB_Count;
+    od2_now = ENCL_Count;
 
-    getRobotPosition();
-    dx = set_x - x_glob;
-    dy = set_y - y_glob;
-    dsm = sqrt(pow(dx, 2) + pow(dy, 2));
+    od1 = od1_now - last_od1;
+    od2 = od2_now - last_od2;
+    last_od1 = od1_now;
+    last_od2 = od2_now;
+    x_frame = od1 * xCon;
+    y_frame = od2 * yCon;
 
-    s_error = dsm;
-    d_i += s_error;
-    d_i = constrain(d_i, 0, 1000);
-    d_s = s_error - s_prev_error;
-    s_prev_error = s_error;
-    h_error = gyro_pos - set_head;
-    h_i += h_error;
-    h_i = constrain(h_i, 0, 1000);
-    h_d = h_error - h_preverror;
-    h_preverror = h_error;
+    x_glob += (x_frame * cos(degToRad(gyro_pos)) - y_frame * sin(degToRad(gyro_pos)));
+    y_glob += (x_frame * sin(degToRad(gyro_pos)) + y_frame * cos(degToRad(gyro_pos)));
+    // Serial.print(gyro_pos);
+    // Serial.print("\t");
+    // Serial.print(x_glob);
+    // Serial.print("\t");
+    // Serial.println(y_glob);
+  }
 
-    if (dy == 0)
+  void omniControl(int spd, int alpha, int omega)
+  {
+    int w1, w2, w3, w4;
+    w1 = spd * cos(degToRad(135) - degToRad(alpha)) + omega; // 315
+    w2 = spd * cos(degToRad(225) - degToRad(alpha)) + omega; // 45
+    w3 = spd * cos(degToRad(315) - degToRad(alpha)) + omega; // 135
+    w4 = spd * cos(degToRad(45) - degToRad(alpha)) + omega;  // 225
+
+    if (w1 > MAX_SPD)
+      w1 = MAX_SPD;
+    if (w1 < -MAX_SPD)
+      w1 = -MAX_SPD;
+    if (w2 > MAX_SPD)
+      w2 = MAX_SPD;
+    if (w2 < -MAX_SPD)
+      w2 = -MAX_SPD;
+    if (w3 > MAX_SPD)
+      w3 = MAX_SPD;
+    if (w3 < -MAX_SPD)
+      w3 = -MAX_SPD;
+    if (w4 > MAX_SPD)
+      w4 = MAX_SPD;
+    if (w4 < -MAX_SPD)
+      w4 = -MAX_SPD;
+    // Serial.print(w1);
+    // Serial.print("\t");
+    // Serial.print(w2);
+    // Serial.print("\t");
+    // Serial.print(w3);
+    // Serial.print("\t");
+    // Serial.println(w4);
+
+    sendDriveCmd(w1, w2, w3, w4);
+  }
+
+  void headingControl(int spd, int course, int set_head)
+  {
+    if (abs(gyro_pos) - set_head > 4)
     {
-      if (dx < 0)
-      {
-        theta = 0;
-      }
-      else if (dx > 0)
-      {
-        theta = 180;
-      }
-    }
-    else if (dx == 0)
-    {
-      if (dy < 0)
-      {
-        theta = 270;
-      }
-      else if (dy > 0)
-      {
-        theta = 90;
-      }
+      error = gyro_pos - set_head;
+      p = Kp * error;
+      d = (error - prev_error) * Kd;
+      prev_error = error;
     }
     else
     {
-      theta = atan2(dy, dx) * (180 / PI);
-      theta = 180 - theta;
+      error = 0;
+      prev_error = 0;
     }
-    serialEvent1();
-    mapgyro = gyro_pos;
-    if (mapgyro > 0)
+    edit = p + d;
+    omniControl(spd, course, edit);
+  }
+
+  void p2ptrack(float set_x, float set_y, float set_head)
+  {
+
+    static volatile float s_prev_error = 0.0f;
+    static bool atTarget = false;
+    static float theta = 0;
+    while (1)
     {
-      mapgyro = fmod(mapgyro, 360);
+
+      getRobotPosition();
+      dx = set_x - x_glob;
+      dy = set_y - y_glob;
+      dsm = sqrt(pow(dx, 2) + pow(dy, 2));
+
+      s_error = dsm;
+      d_i += s_error;
+      d_i = constrain(d_i, 0, 1000);
+      d_s = s_error - s_prev_error;
+      s_prev_error = s_error;
+      h_error = gyro_pos - set_head;
+      h_i += h_error;
+      h_i = constrain(h_i, 0, 1000);
+      h_d = h_error - h_preverror;
+      h_preverror = h_error;
+
+      if (dy == 0)
+      {
+        if (dx < 0)
+        {
+          theta = 0;
+        }
+        else if (dx > 0)
+        {
+          theta = 180;
+        }
+      }
+      else if (dx == 0)
+      {
+        if (dy < 0)
+        {
+          theta = 270;
+        }
+        else if (dy > 0)
+        {
+          theta = 90;
+        }
+      }
+      else
+      {
+        theta = atan2(dy, dx) * (180 / PI);
+        theta = 180 - theta;
+      }
+      serialEvent1();
+      mapgyro = gyro_pos;
+      if (mapgyro > 0)
+      {
+        mapgyro = fmod(mapgyro, 360);
+      }
+      else if (mapgyro < 0)
+      {
+        mapgyro = fmod(abs(mapgyro), 360 * -1);
+      }
+
+      s_edit = (s_error * s_kp) + (d_i * s_ki) + (s_kd * d_s);
+      h_edit = (h_error * h_kp) + (h_i * h_ki) + (h_kd * h_d);
+      compensateTht = theta + mapgyro;
+
+      if ((abs(dx) <= 3 && abs(dy) <= 3) && abs(h_error) <= 5)
+      {
+        if (atTarget == false)
+        {
+          targetTime = millis();
+        }
+        atTarget = true;
+        if (millis() - targetTime > 500)
+        {
+          // atTarget = true;
+          sendDriveCmd(0, 0, 0, 0);
+          break;
+        }
+      }
+      else
+      {
+        atTarget = false;
+      }
+
+      omniControl(s_edit, compensateTht, h_edit);
+
+      // headingControl(s_edit, compensateTht, set_head);
     }
-    else if (mapgyro < 0)
+  }
+
+  void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address)
+  {
+    byte dataSend[9];
+    dataSend[0] = 0xFF;
+    dataSend[1] = 0xFF;
+    dataSend[2] = id;
+    dataSend[3] = 0x05; // length
+    dataSend[4] = (byte)instruction;
+    dataSend[5] = (byte)Address;
+    dataSend[6] = (byte)(data & 0xFF);
+    dataSend[7] = (byte)(data >> 8);
+
+    uint16_t checksum = ~(id + dataSend[3] + dataSend[4] + dataSend[5] + dataSend[6] + dataSend[7]);
+    dataSend[8] = (checksum & 0xFF);
+
+    for (int i = 0; i <= 9; i++)
     {
-      mapgyro = fmod(abs(mapgyro), 360 * -1);
+      Serial3.write(dataSend[i]);
+      delay(1);
+    }
+    delay(50);
+  }
+
+  void writeToRotator(int16_t speed, uint8_t id, uint8_t instruction, uint8_t Address)
+  {
+    uint8_t checksum;
+    uint8_t serial_send[9];
+
+    if (speed < 0)
+    {
+      speed = abs(speed) + 1023;
     }
 
-    s_edit = (s_error * s_kp) + (d_i * s_ki) + (s_kd * d_s);
-    h_edit = (h_error * h_kp) + (h_i * h_ki) + (h_kd * h_d);
-    compensateTht = theta + mapgyro;
-
-    if ((abs(dx) <= 3 && abs(dy) <= 3) && abs(h_error) <= 5)
+    serial_send[0] = 0xFF;
+    serial_send[1] = 0xFF;
+    serial_send[2] = id;
+    serial_send[3] = 0x05; // 0x05
+    serial_send[4] = (byte)instruction; // 0x03
+    serial_send[5] = (byte)Address;     // 0x20
+    serial_send[6] = (byte)(speed & 0xFF);
+    serial_send[7] = (byte)(speed >> 8);
+    checksum = (serial_send[2] + serial_send[3] + serial_send[4] + serial_send[5] + serial_send[6] + serial_send[7]);
+    serial_send[8] = ~(checksum & 0xFF);
+    for (uint8_t i = 0; i < 9; i++)
     {
-      if (atTarget == false)
+      Serial2.write(serial_send[i]);
+      delay(10);
+    }
+  }
+
+  void sendDriveCmd(int spd1, int spd2, int spd3, int spd4)
+  {
+    m1.i = spd1;
+    m2.i = spd2;
+    m3.i = spd3;
+    m4.i = spd4;
+    const char cmd[12] = {'#', 's', m1.b[1], m1.b[0],
+                          m2.b[1], m2.b[0], m3.b[1], m3.b[0], m4.b[1], m4.b[0],
+                          '\r', '\n'};
+    for (uint8_t i = 0; i < 12; i++)
+    {
+      // Serial.write(cmd[i]);
+      Serial4.write(cmd[i]);
+    }
+  }
+
+  void serialEvent1()
+  {
+    while (Serial1.available())
+    {
+      static unsigned char Buffer_gyro[8] = {};
+      static unsigned char count_gyro = 0;
+      volatile unsigned char Buffer = Serial1.read();
+      Buffer_gyro[count_gyro] = Buffer;
+      if (count_gyro == 0 && Buffer_gyro[0] != 0xAA)
+        return;
+      count_gyro++;
+
+      if (count_gyro == 8)
       {
-        targetTime = millis();
+        count_gyro = 0;
+
+        if (Buffer_gyro[0] == 0xAA && Buffer_gyro[7] == 0x55)
+        {
+          //robot.smooth((int16_t)(Buffer_gyro[1] << 8 | Buffer_gyro[2]) / 100.00, 0.95, robot.gyro_pos);
+          gyro_pos = (int16_t)(Buffer_gyro[1] << 8 | Buffer_gyro[2]) / 100.00;
+        }
       }
-      atTarget = true;
-      if (millis() - targetTime > 500)
-      {
-        // atTarget = true;
-        sendDriveCmd(0,0,0,0);
-        break;
-      }
+    }
+  }
+
+  float degToRad(int val)
+  {
+    return val * (PI / 180);
+  }
+
+  void ENCBA_Read()
+  {
+    if (digitalRead(encB1) == LOW)
+    {
+      ENCB_Count--;
     }
     else
     {
-      atTarget = false;
+      ENCB_Count++;
     }
-
-    omniControl(s_edit, compensateTht, h_edit);
-
-    // headingControl(s_edit, compensateTht, set_head);
+    // Serial.println(ENCL_Count);
   }
-}
 
-void sendDriveCmd(int spd1, int spd2, int spd3, int spd4) {
-  m1.i = spd1;
-  m2.i = spd2;
-  m3.i = spd3;
-  m4.i = spd4;
-  const char cmd[12] = {'#', 's', m1.b[1], m1.b[0],
-                        m2.b[1], m2.b[0], m3.b[1], m3.b[0], m4.b[1], m4.b[0],
-                        '\r', '\n'};
-  for (uint8_t i = 0; i < 12; i++)
+  void ENCBB_Read()
   {
-    // Serial.write(cmd[i]);
-    Serial4.write(cmd[i]);
-  }
-}
-
-void serialEvent1()
-{
-  while (Serial1.available())
-  {
-    static unsigned char Buffer_gyro[8] = {};
-    static unsigned char count_gyro = 0;
-    volatile unsigned char Buffer = Serial1.read();
-    Buffer_gyro[count_gyro] = Buffer;
-    if (count_gyro == 0 && Buffer_gyro[0] != 0xAA)
-      return;
-    count_gyro++;
-
-    if (count_gyro == 8)
+    if (digitalRead(encA1) == LOW)
     {
-      count_gyro = 0;
-
-      if (Buffer_gyro[0] == 0xAA && Buffer_gyro[7] == 0x55)
-      {
-        //robot.smooth((int16_t)(Buffer_gyro[1] << 8 | Buffer_gyro[2]) / 100.00, 0.95, robot.gyro_pos);
-        gyro_pos = (int16_t)(Buffer_gyro[1] << 8 | Buffer_gyro[2]) / 100.00;
-      }
+      ENCB_Count++;
+    }
+    else
+    {
+      ENCB_Count--;
     }
   }
-}
 
-float degToRad(int val)
-{
-  return val * (PI / 180);
-}
+  void ENCLA_Read()
+  {
+    if (digitalRead(encB2) == LOW)
+    {
+      ENCL_Count++;
+    }
+    else
+    {
+      ENCL_Count--;
+    }
+  }
 
-void ENCBA_Read() {
-  if (digitalRead(encB1) == LOW)
+  void ENCLB_Read()
   {
-    ENCB_Count--;
+    if (digitalRead(encA2) == LOW)
+    {
+      //  Serial.println("testttt");
+      ENCL_Count--;
+    }
+    else
+    {
+      ENCL_Count++;
+    }
   }
-  else
-  {
-    ENCB_Count++;
-  }
- // Serial.println(ENCL_Count);
-}
-
-void ENCBB_Read() {
-  if (digitalRead(encA1) == LOW)
-  {
-    ENCB_Count++;
-  }
-  else
-  {
-    ENCB_Count--;
-  }
-}
-
-void ENCLA_Read() {
-  if (digitalRead(encB2) == LOW)
-  {
-    ENCL_Count++;
-  }
-  else
-  {
-    ENCL_Count--;
-  }
-}
-
-void ENCLB_Read() {
-  if (digitalRead(encA2) == LOW)
-  {
-    //  Serial.println("testttt");
-    ENCL_Count--;
-  }
-  else
-  {
-    ENCL_Count++;
-  }
-}
