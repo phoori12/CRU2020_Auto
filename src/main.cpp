@@ -14,9 +14,9 @@
 #define object_r 37 // object right
 #define limit_r 38 // limit right
 #define limit_f 39 // limit front
-#define sen4 25 // 47
-#define sen5 26 // 48
-#define sen6 27  // 49
+#define Eobject_m 25 // 47 e_object middle
+#define Eobject_r 26 // 48 e_object right // active high // 
+#define Eobject_l 27  // 49 e_object left
 #define limit_l 50 // limit left
 #define object_f 51 // object front
 #define object_l 52 // object left
@@ -38,7 +38,7 @@ union packed_int
 } m1, m2, m3, m4;
 //////////////////////////////
 
-#define MAX_SPD 1500
+#define MAX_SPD 4500
 volatile float gyro_pos = 0;
 volatile long ENCL_Count = 0;
 volatile long ENCB_Count = 0;
@@ -46,13 +46,13 @@ volatile long ENCB_Count = 0;
 int setpoint = 0;           //////////////////////////////////
 float prev_error = 0;       //                              //
 float error, p, i, d, edit; //        Heading Tuneup        //
-float Kp = 10.0f;           //          Parameters          //
+float Kp = 30.0f;           //          Parameters          //
 float Ki = 0.00;            //                              //
-float Kd = 3.50;            //////////////////////////////////
+float Kd = 10.5;            //////////////////////////////////
 
 /////////////// Localization Variables ////////////////////
-const float xCon = 0.043422; // To be tuned
-const float yCon = 0.039841; // To be tuned
+const float xCon = 0.040177f; // To be tuned // 0.043422  // 1/2489
+const float yCon = 0.039809f; // To be tuned // 0.039841 // 1/2512
 volatile long od1 = 0, od2 = 0;
 volatile long last_od1 = 0, last_od2 = 0;
 volatile float x_frame, y_frame, x_glob = 0, y_glob = 0;
@@ -61,8 +61,8 @@ volatile float x_frame, y_frame, x_glob = 0, y_glob = 0;
 ///////////////////// P2P Control Vars /////////////////////
 float mapgyro;
 float d_i = 0;
-const float s_kp = 30.0f, s_ki = 0.25f, s_kd = 8.0f;
-const float h_kp = 10.0f, h_ki = 0.03f, h_kd = 3.50f;
+const float s_kp = 77.0f, s_ki = 0.50f, s_kd = 24.0f;
+const float h_kp = 30.0f, h_ki = 0.09f, h_kd = 10.50f;
 float dx, dy, dsm, s_error, d_s, s_edit, compensateTht;
 float h_edit, h_error = 0, h_preverror = 0, h_i = 0, h_d = 0;
 long targetTime = 0;
@@ -79,13 +79,17 @@ void omniControl(int spd, int alpha, int omega);
 void headingControl(int spd, int course, int set_head);
 void p2ptrack(float set_x, float set_y, float set_head);
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4);
+void stopCmd();
 ///////////////////////////////////////////////////////////
 
 void setup()
 {
   Serial.begin(9600);
+  Serial1.begin(115200); // Gyro Serial Init
   Serial4.begin(115200); // Smart Drive Serial Init
   
+  pinMode(13 ,INPUT);
+  digitalWrite(13, LOW);
   //////// Switch Init ////////
   pinMode(sw_blue, INPUT); // Plan 1
   pinMode(sw_yell, INPUT); // Plan 2
@@ -98,6 +102,9 @@ void setup()
   pinMode(limit_l, INPUT);
   pinMode(object_r, INPUT);
   pinMode(limit_r, INPUT);
+  pinMode(Eobject_l, INPUT);
+  pinMode(Eobject_m, INPUT);
+  pinMode(Eobject_r, INPUT);
   //////// Encoder Init ////////
   pinMode(encA1, INPUT);
   pinMode(encB1, INPUT);
@@ -107,18 +114,77 @@ void setup()
   attachInterrupt(encB1, ENCBB_Read, RISING);
   attachInterrupt(encA2, ENCLA_Read, RISING);
   attachInterrupt(encB2, ENCLB_Read, RISING);
+  //////// Gyro reset ////////
+  Serial1.write(0xA5); // set Gyro heading to 0
+  Serial1.write(0x55);
+  delay(2000);
+  Serial1.write(0xA5);
+  Serial1.write(0x52); // set Gyro Read mode 2
+  delay(2000);
+  digitalWrite(13, HIGH);
+
 }
 
+
+int gyro_offset = 3;
 // 180 - > right
 // 0 -> left
 // 90 -> front 
 // 270 -> bacl
 void loop() {
-//  omniControl(MAX_SPD, 180,0);
-//  sendDriveCmd(0,0,0,1000);
+  p2ptrack(16, -62, 0); //x 16 y -62
+  stopCmd();
   delay(100);
+  p2ptrack(25, -62, 0); //x 25 y -62
+  stopCmd();
+  delay(100);
+  while (1)
+  {
+    getRobotPosition();
+    Serial.print(x_glob);
+    Serial.print("\t");
+    Serial.println(y_glob);
+    //stopCmd();
+  }
+//  omniControl(MAX_SPD, 180,0);
+  //sendDriveCmd(2500,-2500,-2500,2500);
+//  getRobotPosition();
+ // Serial.printf("%d %d %d\n", digitalRead(sen4), digitalRead(sen5), digitalRead(sen6));
+//Serial.println(gyro_pos);
+//delay(10);
+  // unsigned long ts = millis();
+  // while(millis() < ts + 2000) {
+  //   headingControl(MAX_SPD, 90, 0 + gyro_offset);
+  // }
+  // stopCmd();
+  // delay(100);
+  // ts = millis();
+  // while (millis() < ts + 2000)
+  // {
+  //   headingControl(MAX_SPD, 0, 0 + gyro_offset);
+  // }
+  // stopCmd();
+  // delay(100);
+  // ts = millis();
+  // while (millis() < ts + 2000)
+  // {
+  //   headingControl(MAX_SPD, 270, 0 + gyro_offset);
+  // }
+  // stopCmd();
+  // delay(100);
+  // ts = millis();
+  // while (millis() < ts + 2000)
+  // {
+  //   headingControl(MAX_SPD, 180, 0 + gyro_offset);
+  // }
+  // stopCmd();
+  // delay(100);
+  
 }
 
+void stopCmd() {
+  sendDriveCmd(0,0,0,0);
+}
 void getRobotPosition() {
   static long od1_now = 0, od2_now = 0;
   od1_now = ENCB_Count;
@@ -133,11 +199,11 @@ void getRobotPosition() {
 
   x_glob += (x_frame * cos(degToRad(gyro_pos)) - y_frame * sin(degToRad(gyro_pos)));
   y_glob += (x_frame * sin(degToRad(gyro_pos)) + y_frame * cos(degToRad(gyro_pos)));
-  Serial.print(gyro_pos);
-  Serial.print("\t");
-  Serial.print(x_glob);
-  Serial.print("\t");
-  Serial.println(y_glob);
+  // Serial.print(gyro_pos);
+  // Serial.print("\t");
+  // Serial.print(x_glob);
+  // Serial.print("\t");
+  // Serial.println(y_glob);
 }
 
 void omniControl(int spd, int alpha, int omega) {
@@ -170,11 +236,12 @@ void omniControl(int spd, int alpha, int omega) {
   // Serial.print(w3);
   // Serial.print("\t");
   // Serial.println(w4);
+  
   sendDriveCmd(w1, w2, w3, w4);
 }
 
 void headingControl(int spd, int course, int set_head) {
-  if (abs(gyro_pos) - set_head > 2)
+  if (abs(gyro_pos) - set_head > 4)
   {
     error = gyro_pos - set_head;
     p = Kp * error;
@@ -293,6 +360,31 @@ void sendDriveCmd(int spd1, int spd2, int spd3, int spd4) {
   {
     // Serial.write(cmd[i]);
     Serial4.write(cmd[i]);
+  }
+}
+
+void serialEvent1()
+{
+  while (Serial1.available())
+  {
+    static unsigned char Buffer_gyro[8] = {};
+    static unsigned char count_gyro = 0;
+    volatile unsigned char Buffer = Serial1.read();
+    Buffer_gyro[count_gyro] = Buffer;
+    if (count_gyro == 0 && Buffer_gyro[0] != 0xAA)
+      return;
+    count_gyro++;
+
+    if (count_gyro == 8)
+    {
+      count_gyro = 0;
+
+      if (Buffer_gyro[0] == 0xAA && Buffer_gyro[7] == 0x55)
+      {
+        //robot.smooth((int16_t)(Buffer_gyro[1] << 8 | Buffer_gyro[2]) / 100.00, 0.95, robot.gyro_pos);
+        gyro_pos = (int16_t)(Buffer_gyro[1] << 8 | Buffer_gyro[2]) / 100.00;
+      }
+    }
   }
 }
 
