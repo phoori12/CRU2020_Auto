@@ -1,10 +1,14 @@
 #include <Arduino.h>
+#include <Servo.h>
 
 #define feedback_poten 23
 
-#define servo1 22
-#define servo2 21
-#define servo3 20
+Servo servo_right;
+Servo servo_left;
+Servo servo_mid;
+#define servo_r 22
+#define servo_l 21
+#define servo_m 20
 
 #define encA1 33 // back encoder A
 #define encB1 34 // back encoder B
@@ -25,6 +29,9 @@
 #define sw_yell 48 //  yellow sw
 #define sw_red 49 //  red sw
 
+#define servo_max 180 // maximum servo span (retraction)
+#define servo_med 90  // medium servo span (released)
+#define servo_def 0 // defualt servo span (closed)
 //smart drive serial4
 //dynamixel ax_18 serial3
 //dynamixel mx_18 serial2
@@ -88,6 +95,14 @@ void setup()
   Serial1.begin(115200); // Gyro Serial Init
   Serial4.begin(115200); // Smart Drive Serial Init
   
+  /// Servo Init ///
+  servo_right.attach(servo_r);
+  servo_left.attach(servo_l);
+  servo_mid.attach(servo_m);
+  servo_left.write(0);
+  servo_right.write(0);
+  servo_mid.write(0);
+  delay(2000);
   pinMode(13 ,INPUT);
   digitalWrite(13, LOW);
   //////// Switch Init ////////
@@ -122,7 +137,8 @@ void setup()
   Serial1.write(0x52); // set Gyro Read mode 2
   delay(2000);
   digitalWrite(13, HIGH);
-
+  /////////////////////////////
+  
 }
 
 
@@ -131,55 +147,36 @@ int gyro_offset = 3;
 // 0 -> left
 // 90 -> front 
 // 270 -> bacl
-void loop() {
-  p2ptrack(16, -62, 0); //x 16 y -62
-  stopCmd();
-  delay(100);
-  p2ptrack(25, -62, 0); //x 25 y -62
-  stopCmd();
-  delay(100);
-  while (1)
-  {
-    getRobotPosition();
-    Serial.print(x_glob);
-    Serial.print("\t");
-    Serial.println(y_glob);
-    //stopCmd();
-  }
-//  omniControl(MAX_SPD, 180,0);
-  //sendDriveCmd(2500,-2500,-2500,2500);
-//  getRobotPosition();
- // Serial.printf("%d %d %d\n", digitalRead(sen4), digitalRead(sen5), digitalRead(sen6));
-//Serial.println(gyro_pos);
-//delay(10);
-  // unsigned long ts = millis();
-  // while(millis() < ts + 2000) {
-  //   headingControl(MAX_SPD, 90, 0 + gyro_offset);
-  // }
+void loop()
+{
+  // servo_left.write(servo_def);
+  // servo_mid.write(servo_def);
+  // servo_right.write(servo_def);
+  // delay(2000);
+  // servo_left.write(servo_med);
+  // servo_mid.write(servo_med);
+  // servo_right.write(servo_med);
+  // delay(2000);
+  // servo_left.write(servo_max);
+  // servo_mid.write(servo_max);
+  // servo_right.write(servo_max);
+  // delay(2000);
+
+
+  // p2ptrack(16, -62, 0); //x 16 y -62
   // stopCmd();
   // delay(100);
-  // ts = millis();
-  // while (millis() < ts + 2000)
+  // p2ptrack(25, -62, 0); //x 25 y -62
+  // stopCmd();
+  // delay(100);
+  // while (1)
   // {
-  //   headingControl(MAX_SPD, 0, 0 + gyro_offset);
+  //   getRobotPosition();
+  //   Serial.print(x_glob);
+  //   Serial.print("\t");
+  //   Serial.println(y_glob);
+  //   //stopCmd();
   // }
-  // stopCmd();
-  // delay(100);
-  // ts = millis();
-  // while (millis() < ts + 2000)
-  // {
-  //   headingControl(MAX_SPD, 270, 0 + gyro_offset);
-  // }
-  // stopCmd();
-  // delay(100);
-  // ts = millis();
-  // while (millis() < ts + 2000)
-  // {
-  //   headingControl(MAX_SPD, 180, 0 + gyro_offset);
-  // }
-  // stopCmd();
-  // delay(100);
-  
 }
 
 void stopCmd() {
