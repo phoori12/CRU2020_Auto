@@ -21,9 +21,9 @@
 #define object_f 51 // object front
 #define object_l 52 // object left
 
-#define sw1 47 //  blue sw
-#define sw2 48 //  yellow sw
-#define sw3 49 //  red sw
+#define sw_blue 47 //  blue sw
+#define sw_yell 48 //  yellow sw
+#define sw_red 49 //  red sw
 
 //smart drive serial4
 //dynamixel ax_18 serial3
@@ -38,7 +38,7 @@ union packed_int
 } m1, m2, m3, m4;
 //////////////////////////////
 
-#define MAX_SPD 2500
+#define MAX_SPD 1500
 volatile float gyro_pos = 0;
 volatile long ENCL_Count = 0;
 volatile long ENCB_Count = 0;
@@ -85,6 +85,20 @@ void setup()
 {
   Serial.begin(9600);
   Serial4.begin(115200); // Smart Drive Serial Init
+  
+  //////// Switch Init ////////
+  pinMode(sw_blue, INPUT); // Plan 1
+  pinMode(sw_yell, INPUT); // Plan 2
+  pinMode(sw_red, INPUT); // Plan 3
+  //////// Bottom sensor init ////////
+  pinMode(feedback_poten, INPUT); // analog potentiometer
+  pinMode(object_f, INPUT);
+  pinMode(limit_f, INPUT);
+  pinMode(object_l, INPUT);
+  pinMode(limit_l, INPUT);
+  pinMode(object_r, INPUT);
+  pinMode(limit_r, INPUT);
+  //////// Encoder Init ////////
   pinMode(encA1, INPUT);
   pinMode(encB1, INPUT);
   pinMode(encA2, INPUT);
@@ -93,11 +107,16 @@ void setup()
   attachInterrupt(encB1, ENCBB_Read, RISING);
   attachInterrupt(encA2, ENCLA_Read, RISING);
   attachInterrupt(encB2, ENCLB_Read, RISING);
-
 }
 
+// 180 - > right
+// 0 -> left
+// 90 -> front 
+// 270 -> bacl
 void loop() {
-
+//  omniControl(MAX_SPD, 180,0);
+//  sendDriveCmd(0,0,0,1000);
+  delay(100);
 }
 
 void getRobotPosition() {
@@ -123,10 +142,10 @@ void getRobotPosition() {
 
 void omniControl(int spd, int alpha, int omega) {
   int w1, w2, w3, w4;
-  w1 = spd * cos(degToRad(315) - degToRad(alpha)) + omega;
-  w2 = spd * cos(degToRad(45) - degToRad(alpha)) + omega;
-  w3 = spd * cos(degToRad(135) - degToRad(alpha)) + omega;
-  w4 = spd * cos(degToRad(225) - degToRad(alpha)) + omega;
+  w1 = spd * cos(degToRad(135) - degToRad(alpha)) + omega; // 315
+  w2 = spd * cos(degToRad(225) - degToRad(alpha)) + omega; // 45
+  w3 = spd * cos(degToRad(315) - degToRad(alpha)) + omega; // 135
+  w4 = spd * cos(degToRad(45) - degToRad(alpha)) + omega; // 225
 
   if (w1 > MAX_SPD)
     w1 = MAX_SPD;
@@ -265,8 +284,8 @@ void p2ptrack(float set_x, float set_y, float set_head) {
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4) {
   m1.i = spd1;
   m2.i = spd2;
-  m3.i = -spd3;
-  m4.i = -spd4;
+  m3.i = spd3;
+  m4.i = spd4;
   const char cmd[12] = {'#', 's', m1.b[1], m1.b[0],
                         m2.b[1], m2.b[0], m3.b[1], m3.b[0], m4.b[1], m4.b[0],
                         '\r', '\n'};
