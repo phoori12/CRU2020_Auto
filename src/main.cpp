@@ -107,6 +107,7 @@ bool r_atTarget = false;
 ////////////////////////////////////////////////////////////////
 
 volatile int rotatorPosition = rotator_midpos, feederPosition = AXFeed_min;
+volatile bool rotateFlag = false;
 uint8_t AddressGoalPosition = 30;
 uint8_t AddressMovingSpeed = 0x20;
 uint8_t cmdWrite = 3;
@@ -123,13 +124,13 @@ void ENCBB_Read();
 void getRobotPosition();
 void omniControl(int spd, int alpha, int omega);
 void headingControl(int spd, int course, int set_head);
-void p2ptrack(float set_x, float set_y, float set_head, bool viaMode=false);
+void p2ptrack(float set_x, float set_y, float set_head, bool viaMode, int rPos);
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4);
 void stopCmd();
 void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
 void writeToRotator(int16_t speed, uint8_t id, uint8_t instruction, uint8_t Address);
 void rotatorControl(int position, int speed);
-//void rotatorInterval();
+void rotatorInterval();
 void setFeeder(int feederpos);
 // void feederInterval();
 ///////////////////////////////////////////////////////////
@@ -192,7 +193,7 @@ void setup()
   writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
   delay(500);
   //////////////////////////////////////////////
-  //  rotatorTimer.begin(rotatorInterval, 10000);
+ // rotatorTimer.begin(rotatorInterval, 10000);
 }
 
 
@@ -204,12 +205,15 @@ void setup()
 
 // ลบหมุนขวา บวกหมุนซ้าย
 void loop() {
-    p2ptrack(16, -62, 0, true); //x 16 y -62
+    feedingTime = 0;
+    p2ptrack(13, -62, 0, true, rotator_midpos); //x 16 y -62
     stopCmd();
     delay(50);
-    //feedingTime = millis();
 
-    // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    feedingTime = millis();
+    rotateFlag  = false;
+    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(200);
     // rotatorControl(rotator_rightpos, rotator_maxSpeed);
     // delay(500);
     // p2ptrack(25, -62, 0); //x 25 y -62
@@ -233,6 +237,7 @@ void loop() {
         break;
       }
     }
+    rotateFlag = false;
     // stopCmd();
     // delay(100);
     // //rotatorControl(rotator_rightpos, rotator_maxSpeed);
@@ -241,146 +246,146 @@ void loop() {
     // servo_right.write(servo_max);
     // delay(500);
     // /////////////////////////////////////////////////////////////////
-    p2ptrack(4, -62, 0, true); //x 16 y -62
-    stopCmd();
-    delay(100);
-    // servo_right.write(servo_def);
-    // delay(500);
-    // p2ptrack(13, -102, 0, true); //x 16 y -62
-    // stopCmd();
-    // delay(50);
-    // p2ptrack(58, -102, 0); //x 16 y -62
+    // p2ptrack(4, -62, 0, true); //x 16 y -62
     // stopCmd();
     // delay(100);
-    p2ptrack(58, -115, 0); //x 16 y -62
-    stopCmd();
-    delay(50);
+    // // servo_right.write(servo_def);
+    // // delay(500);
+    // // p2ptrack(13, -102, 0, true); //x 16 y -62
+    // // stopCmd();
+    // // delay(50);
+    // // p2ptrack(58, -102, 0); //x 16 y -62
+    // // stopCmd();
+    // // delay(100);
+    // p2ptrack(58, -115, 0); //x 16 y -62
+    // stopCmd();
+    // delay(50);
     
-    while (digitalRead(limit_f))
-    {
-      getRobotPosition();
-      headingControl(1500, 90, 0);
-      if (od2 == 0 && !crash_status) { // od2 for y axis
-        crash_time = millis();
-        crash_status = true;
-      } else {
-        crash_status = false;
-      }
+    // while (digitalRead(limit_f))
+    // {
+    //   getRobotPosition();
+    //   headingControl(1500, 90, 0);
+    //   if (od2 == 0 && !crash_status) { // od2 for y axis
+    //     crash_time = millis();
+    //     crash_status = true;
+    //   } else {
+    //     crash_status = false;
+    //   }
 
-      if (millis() - crash_time > crash_delay && crash_status) {
-        crash_time = 0;
-        crash_status = false;
-        break;
-      }
+    //   if (millis() - crash_time > crash_delay && crash_status) {
+    //     crash_time = 0;
+    //     crash_status = false;
+    //     break;
+    //   }
 
-    }
-    stopCmd();
-    delay(100);
-    while (digitalRead(limit_f))
-    {
-      getRobotPosition();
-      headingControl(1500, 90, 0);
-      if (od2 == 0 && !crash_status) { // od2 for y axis
-        crash_time = millis();
-        crash_status = true;
-      } else {
-        crash_status = false;
-      }
-
-      if (millis() - crash_time > crash_delay && crash_status) {
-        crash_time = 0;
-        crash_status = false;
-        break;
-      }
-
-    }
-    stopCmd();
-    delay(100);
-    // writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    // delay(500);
-    // rotatorControl(rotator_midpos, rotator_maxSpeed);
-    // servo_mid.write(servo_med);
-    // delay(500);
-    // servo_mid.write(servo_max);
-    // delay(500);
-    // /////////////////////////////////////////////////////////////////////////////////
-    p2ptrack(62, -120, 0, true); //x 16 y -62
-    stopCmd();
-    delay(10);
-    // servo_mid.write(servo_def);
-    // delay(500);
-    // p2ptrack(105, -110, 0, true); //x 16 y -62
-    // stopCmd();
-    // delay(50);
-    p2ptrack(110, -65, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
-    // p2ptrack(95, -65, 0); //x 16 y -62
+    // }
     // stopCmd();
     // delay(100);
-    while (digitalRead(limit_l))
-    {
-      getRobotPosition();
-      headingControl(1500, 0, 0);
-      if (od1 == 0 && !crash_status)
-      { // od2 for y axis
-        crash_time = millis();
-        crash_status = true;
-      }
+    // while (digitalRead(limit_f))
+    // {
+    //   getRobotPosition();
+    //   headingControl(1500, 90, 0);
+    //   if (od2 == 0 && !crash_status) { // od2 for y axis
+    //     crash_time = millis();
+    //     crash_status = true;
+    //   } else {
+    //     crash_status = false;
+    //   }
 
-      if (millis() - crash_time > crash_delay && crash_status)
-      {
-        crash_time = 0;
-        crash_status = false;
-        break;
-      }
-    }
-    stopCmd();
-    delay(100);
+    //   if (millis() - crash_time > crash_delay && crash_status) {
+    //     crash_time = 0;
+    //     crash_status = false;
+    //     break;
+    //   }
 
-    while (digitalRead(object_r))
-    {
-      getRobotPosition();
-      headingControl(1500, 180, 0);
-      if (od1 == 0 && !crash_status)
-      { // od2 for y axis
-        crash_time = millis();
-        crash_status = true;
-      }
+    // }
+    // stopCmd();
+    // delay(100);
+    // // writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    // // delay(500);
+    // // rotatorControl(rotator_midpos, rotator_maxSpeed);
+    // // servo_mid.write(servo_med);
+    // // delay(500);
+    // // servo_mid.write(servo_max);
+    // // delay(500);
+    // // /////////////////////////////////////////////////////////////////////////////////
+    // p2ptrack(62, -120, 0, true); //x 16 y -62
+    // stopCmd();
+    // delay(10);
+    // // servo_mid.write(servo_def);
+    // // delay(500);
+    // // p2ptrack(105, -110, 0, true); //x 16 y -62
+    // // stopCmd();
+    // // delay(50);
+    // p2ptrack(110, -65, 0); //x 16 y -62
+    // stopCmd();
+    // delay(100);
+    // // p2ptrack(95, -65, 0); //x 16 y -62
+    // // stopCmd();
+    // // delay(100);
+    // while (digitalRead(limit_l))
+    // {
+    //   getRobotPosition();
+    //   headingControl(1500, 0, 0);
+    //   if (od1 == 0 && !crash_status)
+    //   { // od2 for y axis
+    //     crash_time = millis();
+    //     crash_status = true;
+    //   }
 
-      if (millis() - crash_time > crash_delay && crash_status)
-      {
-        crash_time = 0;
-        crash_status = false;
-        break;
-      }
-    }
-    stopCmd();
-    delay(100);
+    //   if (millis() - crash_time > crash_delay && crash_status)
+    //   {
+    //     crash_time = 0;
+    //     crash_status = false;
+    //     break;
+    //   }
+    // }
+    // stopCmd();
+    // delay(100);
 
-    while (digitalRead(object_f))
-    {
-      getRobotPosition();
-      headingControl(1500, 100, 0);
-      if (od2 == 0 && !crash_status)
-      { // od2 for y axis
-        crash_time = millis();
-        crash_status = true;
-      }
-      else
-      {
-        crash_status = false;
-      }
+    // while (digitalRead(object_r))
+    // {
+    //   getRobotPosition();
+    //   headingControl(1500, 180, 0);
+    //   if (od1 == 0 && !crash_status)
+    //   { // od2 for y axis
+    //     crash_time = millis();
+    //     crash_status = true;
+    //   }
 
-      if (millis() - crash_time > crash_delay && crash_status)
-      {
-        crash_time = 0;
-        crash_status = false;
-        break;
-      }
-    }
-    stopCmd();
-    delay(100);
+    //   if (millis() - crash_time > crash_delay && crash_status)
+    //   {
+    //     crash_time = 0;
+    //     crash_status = false;
+    //     break;
+    //   }
+    // }
+    // stopCmd();
+    // delay(100);
+
+    // while (digitalRead(object_f))
+    // {
+    //   getRobotPosition();
+    //   headingControl(1500, 100, 0);
+    //   if (od2 == 0 && !crash_status)
+    //   { // od2 for y axis
+    //     crash_time = millis();
+    //     crash_status = true;
+    //   }
+    //   else
+    //   {
+    //     crash_status = false;
+    //   }
+
+    //   if (millis() - crash_time > crash_delay && crash_status)
+    //   {
+    //     crash_time = 0;
+    //     crash_status = false;
+    //     break;
+    //   }
+    // }
+    // stopCmd();
+    // delay(100);
     // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
     // delay(500);
     // rotatorControl(rotator_leftpos, rotator_maxSpeed);
@@ -415,8 +420,10 @@ void loop() {
 
 // void rotatorInterval() 
 // {
-//   if (rotate_rdy == true) {
+//   if (rotateFlag == true) {
 //     rotatorControl(rotatorPosition, rotator_maxSpeed);
+//   } else {
+//     writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
 //   }
   
 // }
@@ -500,14 +507,17 @@ void loop() {
     omniControl(spd, course, edit);
   }
 
-  void p2ptrack(float set_x, float set_y, float set_head, bool viaMode=false)
+  void p2ptrack(float set_x, float set_y, float set_head, bool viaMode, int rPos)
   {
 
     static volatile float s_prev_error = 0.0f;
     static bool atTarget = false;
     static float theta = 0;
+    static uint32_t last_time = 0;
+
     while (1)
     {
+      
       getRobotPosition();
       dx = set_x - x_glob;
       dy = set_y - y_glob;
@@ -587,9 +597,18 @@ void loop() {
       }
 
       omniControl(s_edit, compensateTht, h_edit);
-
+      if (millis() - last_time >= 100)
+      {
+          last_time = millis();
+          if (millis() - feedingTime > 300)
+          {
+            rotatorControl(rPos, rotator_maxSpeed);
+          } else {
+          writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+          }
+      }
       // headingControl(s_edit, compensateTht, set_head);
-    }
+      }
   }
 
   void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address)
