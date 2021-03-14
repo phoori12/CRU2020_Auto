@@ -35,13 +35,15 @@ Servo servo_mid;
 
 #define AXFeed_max 550
 #define AXFeed_min 0
+#define crash_delay 2000
+#define gyro_accept 3
 
 const int Direction_RS485 = 11;
 //smart drive serial4
 //dynamixel ax_18 serial3
 //dynamixel mx_18 serial2
 // gyro serial1
-
+// via mode
 //IntervalTimer rotatorTimer;
 
 //////// Smart Drive /////////
@@ -72,7 +74,15 @@ volatile long last_od1 = 0, last_od2 = 0;
 volatile float x_frame, y_frame, x_glob = 0, y_glob = 0;
 ///////////////////////////////////////////////////////////
 
-///////////////////// P2P Control Vars /////////////////////
+//////////////////// Crash Detection ///////////////////////
+
+bool crash_status = false;
+uint16_t crash_time = 0;
+uint16_t feedingTime = 0;
+bool rotate_rdy =false;
+
+////////////////////////////////////////////////////////////
+    ///////////////////// P2P Control Vars /////////////////////
 float mapgyro;
 float d_i = 0;
 const float s_kp = 77.0f, s_ki = 0.50f, s_kd = 24.0f;
@@ -83,9 +93,9 @@ long targetTime = 0;
 ////////////////////////////////////////////////////////////
 
 //////////////////////// Rotator PID ////////////////////////
-int rotator_leftpos = 805;
-int rotator_midpos = 854;
-int rotator_rightpos = 900; // 900
+int rotator_leftpos = 815;
+int rotator_midpos = 858;
+int rotator_rightpos = 904; // 900
 int rotator_maxSpeed = 400;
 
 float r_Kp = 10.0f, r_Kd = 2;
@@ -97,6 +107,13 @@ bool r_atTarget = false;
 ////////////////////////////////////////////////////////////////
 
 volatile int rotatorPosition = rotator_midpos, feederPosition = AXFeed_min;
+uint8_t AddressGoalPosition = 30;
+uint8_t AddressMovingSpeed = 0x20;
+uint8_t cmdWrite = 3;
+uint8_t Dynamixel_feed = 1;
+uint8_t Dynamixel_rotate = 1;
+uint8_t gyro_offset = 3;
+
 /////////////// Function Declaration //////////////////////
 float degToRad(int val);
 void ENCLA_Read();
@@ -112,7 +129,8 @@ void stopCmd();
 void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
 void writeToRotator(int16_t speed, uint8_t id, uint8_t instruction, uint8_t Address);
 void rotatorControl(int position, int speed);
-// void rotatorInterval();
+//void rotatorInterval();
+void setFeeder(int feederpos);
 // void feederInterval();
 ///////////////////////////////////////////////////////////
 
@@ -132,7 +150,7 @@ void setup()
   servo_left.write(0);
   servo_right.write(0);
   servo_mid.write(0);
-  delay(2000);
+  delay(1000);
   pinMode(13, INPUT);
   digitalWrite(13, LOW);
   //////// Switch Init ////////
@@ -167,147 +185,152 @@ void setup()
   Serial1.write(0x52); // set Gyro Read mode 2
   delay(2000);
   digitalWrite(13, HIGH);
+  delay(100);
   /////////////////////////////
- // rotatorTimer.begin(rotatorInterval, 10000);
-  }
+//  rotatorTimer.begin(rotatorInterval, 10000);
+}
 
-uint8_t gyro_offset = 3;
+
 // 180 - > right
 // 0 -> left
 // 90 -> front
 // 270 -> bacl
-uint8_t AddressGoalPosition = 30;
-uint8_t AddressMovingSpeed = 0x20;
-uint8_t cmdWrite = 3;
-uint8_t Dynamixel_feed = 1;
-uint8_t Dynamixel_rotate = 1;
+
 
 // ลบหมุนขวา บวกหมุนซ้าย
-
-
 void loop() {
-  // feederPosition = AXFeed_max;
-  // rotatorPosition = rotator_leftpos;
-  /// 1st hole
-  // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-  // delay(500);
-  // rotatorControl(rotator_rightpos, rotator_maxSpeed);
-  // 2nd hole
-  // writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-  // delay(500);
-  // rotatorControl(rotator_midpos, rotator_maxSpeed);
-  // 3rd hole
-  // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-  // delay(500);
-  // rotatorControl(rotator_leftpos, rotator_maxSpeed);
-  // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-  // delay(1000);
-  // writeToRotator(-300, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-  // delay(1000);
-  // writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-  // delay(1000);
-  // Serial.println(analogRead(feedback_poten));
-  //  delay(50);
-    // writeToAX(0, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    // delay(1000);
-    // writeToAX(550, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-// left 810
-// mid 854
-// right 900
-    // while (1)
-    // {
-    // }
-    // servo_left.write(servo_def);
-    // servo_mid.write(servo_def);
-    // servo_right.write(servo_def);
-    // delay(2000);
-    // servo_left.write(servo_med);
-    // servo_mid.write(servo_med);
-    // servo_right.write(servo_med);
-    // delay(2000);
-    // servo_left.write(servo_max);
-    // servo_mid.write(servo_max);
-    // servo_right.write(servo_max);
-    // delay(2000);
-
-  rotatorControl(rotator_midpos, rotator_maxSpeed);
-  writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-  delay(500);
-  p2ptrack(16, -62, 0); //x 16 y -62
-  stopCmd();
-  delay(100);
-  p2ptrack(25, -62, 0); //x 25 y -62
-  stopCmd();
-  delay(100);
-  while (digitalRead(limit_r))
-  {
-    headingControl(1500, 180, 0);
-  }
-    stopCmd();
-    delay(100);
-    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    rotatorControl(rotator_midpos, rotator_maxSpeed);
+    writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
     delay(500);
-    rotatorControl(rotator_rightpos, rotator_maxSpeed);
-    // servo_right.write(servo_max);
-    // delay(500);
-    //////////////////////////////
     p2ptrack(16, -62, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    // servo_right.write(servo_def);
-    // delay(500);
+    //feedingTime = millis();
+
+    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    rotatorControl(rotator_rightpos, rotator_maxSpeed);
+    delay(500);
+    p2ptrack(25, -62, 0); //x 25 y -62
+    stopCmd();
+    delay(100);
+
+    while (digitalRead(limit_r))
+    {
+      getRobotPosition();
+      headingControl(1500, 180, 0);
+      if (od1 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
+
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+    }
+    stopCmd();
+    delay(100);
+    //rotatorControl(rotator_rightpos, rotator_maxSpeed);
+    servo_right.write(servo_med);
+    delay(500);
+    servo_right.write(servo_max);
+    delay(500);
+    /////////////////////////////////////////////////////////////////
+    p2ptrack(14, -62, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
+    servo_right.write(servo_def);
+    delay(500);
     p2ptrack(16, -102, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    p2ptrack(60, -102, 0); //x 16 y -62
+    p2ptrack(58, -102, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    p2ptrack(60, -95, 0); //x 16 y -62
+    p2ptrack(58, -98, 0); //x 16 y -62
     stopCmd();
     delay(100);
+    
     while (digitalRead(limit_f))
     {
+      getRobotPosition();
       headingControl(1500, 90, 0);
+      if (od2 == 0 && !crash_status) { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      } else {
+        crash_status = false;
+      }
+
+      if (millis() - crash_time > crash_delay && crash_status) {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+
     }
     stopCmd();
     delay(100);
     writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
     delay(500);
     rotatorControl(rotator_midpos, rotator_maxSpeed);
-    // servo_mid.write(servo_max);
-    // delay(500);
-    ///////////////////////////////////
-    p2ptrack(62, -102, 0); //x 16 y -62
+    servo_mid.write(servo_med);
+    delay(500);
+    servo_mid.write(servo_max);
+    delay(500);
+    /////////////////////////////////////////////////////////////////////////////////
+    p2ptrack(62, -110, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    // servo_mid.write(servo_def);
-    // delay(500);
-    p2ptrack(105, -102, 0); //x 16 y -62
+    servo_mid.write(servo_def);
+    delay(500);
+    p2ptrack(105, -110, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    p2ptrack(105, -62, 0); //x 16 y -62
+    p2ptrack(105, -65, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    p2ptrack(95, -62, 0); //x 16 y -62
+    p2ptrack(95, -65, 0); //x 16 y -62
     stopCmd();
     delay(100);
     while (digitalRead(limit_l))
     {
+      getRobotPosition();
       headingControl(1500, 0, 0);
+      if (od1 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
+
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
     }
     stopCmd();
     delay(100);
     writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
     delay(500);
     rotatorControl(rotator_leftpos, rotator_maxSpeed);
-    // servo_left.write(servo_max);
-    // delay(500);
+    servo_left.write(servo_med);
+    delay(500);
+    servo_left.write(servo_max);
+    delay(500);
     p2ptrack(122, -65, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    // servo_left.write(servo_def);
-    // delay(500);
-    p2ptrack(122, -2, 0); //x 16 y -62
+    servo_left.write(servo_def);
+    delay(500);
+    // p2ptrack(122, -5, 0); //x 16 y -62
+    // stopCmd();
+    // delay(100);
+    p2ptrack(122, -5, 0); //x 16 y -62
     stopCmd();
     delay(100);
     rotatorControl(rotator_midpos, rotator_maxSpeed);
@@ -326,7 +349,10 @@ void loop() {
 
 // void rotatorInterval() 
 // {
-//   rotatorControl(rotatorPosition, rotator_maxSpeed);
+//   if (rotate_rdy == true) {
+//     rotatorControl(rotatorPosition, rotator_maxSpeed);
+//   }
+  
 // }
 
   void stopCmd()
@@ -393,14 +419,13 @@ void loop() {
 
   void headingControl(int spd, int course, int set_head)
   {
-    if (abs(gyro_pos) - set_head > 4)
+    if (abs(gyro_pos) - set_head > gyro_accept)
     {
       error = gyro_pos - set_head;
     }
     else
     {
       error = 0;
-      prev_error = 0;
     }
     p = Kp * error;
     d = (error - prev_error) * Kd;
@@ -417,7 +442,6 @@ void loop() {
     static float theta = 0;
     while (1)
     {
-
       getRobotPosition();
       dx = set_x - x_glob;
       dy = set_y - y_glob;
@@ -476,7 +500,7 @@ void loop() {
       h_edit = (h_error * h_kp) + (h_i * h_ki) + (h_kd * h_d);
       compensateTht = theta + mapgyro;
 
-      if ((abs(dx) <= 3 && abs(dy) <= 3) && abs(h_error) <= 5)
+      if ((abs(dx) <= 3 && abs(dy) <= 3) && abs(h_error) <= gyro_accept)
       {
         if (atTarget == false)
         {
