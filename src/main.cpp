@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Servo.h>
+#include <TeensyThreads.h>
 
 #define feedback_poten 23
 
@@ -107,7 +108,6 @@ bool r_atTarget = false;
 ////////////////////////////////////////////////////////////////
 
 volatile int rotatorPosition = rotator_midpos, feederPosition = AXFeed_min;
-volatile bool rotateFlag = false;
 uint8_t AddressGoalPosition = 30;
 uint8_t AddressMovingSpeed = 0x20;
 uint8_t cmdWrite = 3;
@@ -124,16 +124,19 @@ void ENCBB_Read();
 void getRobotPosition();
 void omniControl(int spd, int alpha, int omega);
 void headingControl(int spd, int course, int set_head);
-void p2ptrack(float set_x, float set_y, float set_head, bool viaMode, int rPos);
+void p2ptrack(float set_x, float set_y, float set_head, bool viaMode=false);
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4);
 void stopCmd();
 void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
 void writeToRotator(int16_t speed, uint8_t id, uint8_t instruction, uint8_t Address);
-void rotatorControl(int position, int speed);
+void rotatorControl();
 void rotatorInterval();
 void setFeeder(int feederpos);
 // void feederInterval();
 ///////////////////////////////////////////////////////////
+/////////////////////// Threads //////////////////////////
+volatile bool flagRotate = false;
+volatile bool flagFeed = false;
 
 void setup()
 {
@@ -189,7 +192,11 @@ void setup()
   delay(100);
   /////////////////////////////
   /////////////// Set 0 Dynamixel ///////////////
-  rotatorControl(rotator_midpos, rotator_maxSpeed);
+  threads.addThread(rotatorControl, 1);
+ 
+  flagRotate = true;
+  rotatorPosition = rotator_midpos;
+  delay(1000);
   writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
   delay(500);
   //////////////////////////////////////////////
@@ -205,21 +212,14 @@ void setup()
 
 // ลบหมุนขวา บวกหมุนซ้าย
 void loop() {
-    feedingTime = 0;
-    p2ptrack(13, -62, 0, true, rotator_midpos); //x 16 y -62
+
+    p2ptrack(13, -62, 0, true); //x 16 y -62
     stopCmd();
     delay(50);
-
-    feedingTime = millis();
-    rotateFlag  = false;
     writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
     delay(200);
-    // rotatorControl(rotator_rightpos, rotator_maxSpeed);
-    // delay(500);
-    // p2ptrack(25, -62, 0); //x 25 y -62
-    // stopCmd();
-    // delay(100);
-
+    flagRotate = true;
+    rotatorPosition = rotator_rightpos;
     while (digitalRead(limit_r))
     {
       getRobotPosition();
@@ -237,18 +237,18 @@ void loop() {
         break;
       }
     }
-    rotateFlag = false;
-    // stopCmd();
-    // delay(100);
+    // rotateFlag = false;
+    stopCmd();
+    delay(100);
     // //rotatorControl(rotator_rightpos, rotator_maxSpeed);
     // servo_right.write(servo_med);
     // delay(500);
     // servo_right.write(servo_max);
     // delay(500);
     // /////////////////////////////////////////////////////////////////
-    // p2ptrack(4, -62, 0, true); //x 16 y -62
-    // stopCmd();
-    // delay(100);
+    p2ptrack(4, -62, 0, true); //x 16 y -62
+    stopCmd();
+    delay(100);
     // // servo_right.write(servo_def);
     // // delay(500);
     // // p2ptrack(13, -102, 0, true); //x 16 y -62
@@ -257,156 +257,120 @@ void loop() {
     // // p2ptrack(58, -102, 0); //x 16 y -62
     // // stopCmd();
     // // delay(100);
-    // p2ptrack(58, -115, 0); //x 16 y -62
-    // stopCmd();
-    // delay(50);
-    
-    // while (digitalRead(limit_f))
-    // {
-    //   getRobotPosition();
-    //   headingControl(1500, 90, 0);
-    //   if (od2 == 0 && !crash_status) { // od2 for y axis
-    //     crash_time = millis();
-    //     crash_status = true;
-    //   } else {
-    //     crash_status = false;
-    //   }
+    writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(500);
+    flagRotate = true;
+    rotatorPosition = rotator_midpos;
+    p2ptrack(58, -115, 0); //x 16 y -62
+    stopCmd();
+    delay(50);
+    while (digitalRead(limit_f))
+    {
+      getRobotPosition();
+      headingControl(1500, 90, 0);
+      if (od2 == 0 && !crash_status) { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      } else {
+        crash_status = false;
+      }
 
-    //   if (millis() - crash_time > crash_delay && crash_status) {
-    //     crash_time = 0;
-    //     crash_status = false;
-    //     break;
-    //   }
+      if (millis() - crash_time > crash_delay && crash_status) {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
 
-    // }
-    // stopCmd();
-    // delay(100);
-    // while (digitalRead(limit_f))
-    // {
-    //   getRobotPosition();
-    //   headingControl(1500, 90, 0);
-    //   if (od2 == 0 && !crash_status) { // od2 for y axis
-    //     crash_time = millis();
-    //     crash_status = true;
-    //   } else {
-    //     crash_status = false;
-    //   }
-
-    //   if (millis() - crash_time > crash_delay && crash_status) {
-    //     crash_time = 0;
-    //     crash_status = false;
-    //     break;
-    //   }
-
-    // }
-    // stopCmd();
-    // delay(100);
-    // // writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    // // delay(500);
+    }
+    stopCmd();
+    delay(100);
     // // rotatorControl(rotator_midpos, rotator_maxSpeed);
     // // servo_mid.write(servo_med);
     // // delay(500);
     // // servo_mid.write(servo_max);
     // // delay(500);
     // // /////////////////////////////////////////////////////////////////////////////////
-    // p2ptrack(62, -120, 0, true); //x 16 y -62
-    // stopCmd();
-    // delay(10);
+    p2ptrack(62, -120, 0, true); //x 16 y -62
+    stopCmd();
+    delay(10);
     // // servo_mid.write(servo_def);
     // // delay(500);
     // // p2ptrack(105, -110, 0, true); //x 16 y -62
     // // stopCmd();
     // // delay(50);
-    // p2ptrack(110, -65, 0); //x 16 y -62
-    // stopCmd();
-    // delay(100);
+    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    delay(500);
+    flagRotate = true;
+    rotatorPosition = rotator_leftpos;
+    p2ptrack(110, -65, 0); //x 16 y -62
+    stopCmd();
+    delay(100);
     // // p2ptrack(95, -65, 0); //x 16 y -62
     // // stopCmd();
     // // delay(100);
-    // while (digitalRead(limit_l))
-    // {
-    //   getRobotPosition();
-    //   headingControl(1500, 0, 0);
-    //   if (od1 == 0 && !crash_status)
-    //   { // od2 for y axis
-    //     crash_time = millis();
-    //     crash_status = true;
-    //   }
+    while (digitalRead(limit_l))
+    {
+      getRobotPosition();
+      headingControl(1500, 0, 0);
+      if (od1 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
 
-    //   if (millis() - crash_time > crash_delay && crash_status)
-    //   {
-    //     crash_time = 0;
-    //     crash_status = false;
-    //     break;
-    //   }
-    // }
-    // stopCmd();
-    // delay(100);
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+    }
+    stopCmd();
+    delay(100);
 
-    // while (digitalRead(object_r))
-    // {
-    //   getRobotPosition();
-    //   headingControl(1500, 180, 0);
-    //   if (od1 == 0 && !crash_status)
-    //   { // od2 for y axis
-    //     crash_time = millis();
-    //     crash_status = true;
-    //   }
+    while (digitalRead(object_r))
+    {
+      getRobotPosition();
+      headingControl(1500, 180, 0);
+      if (od1 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
 
-    //   if (millis() - crash_time > crash_delay && crash_status)
-    //   {
-    //     crash_time = 0;
-    //     crash_status = false;
-    //     break;
-    //   }
-    // }
-    // stopCmd();
-    // delay(100);
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+    }
+    stopCmd();
+    delay(100);
+    flagRotate = true;
+    rotatorPosition = rotator_midpos;
+    //writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    while (digitalRead(object_f))
+    {
+      getRobotPosition();
+      headingControl(1500, 100, 0);
+      if (od2 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
+      else
+      {
+        crash_status = false;
+      }
 
-    // while (digitalRead(object_f))
-    // {
-    //   getRobotPosition();
-    //   headingControl(1500, 100, 0);
-    //   if (od2 == 0 && !crash_status)
-    //   { // od2 for y axis
-    //     crash_time = millis();
-    //     crash_status = true;
-    //   }
-    //   else
-    //   {
-    //     crash_status = false;
-    //   }
-
-    //   if (millis() - crash_time > crash_delay && crash_status)
-    //   {
-    //     crash_time = 0;
-    //     crash_status = false;
-    //     break;
-    //   }
-    // }
-    // stopCmd();
-    // delay(100);
-    // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    // delay(500);
-    // rotatorControl(rotator_leftpos, rotator_maxSpeed);
-    // servo_left.write(servo_med);
-    // delay(500);
-    // servo_left.write(servo_max);
-    // delay(500);
-    // p2ptrack(122, -65, 0); //x 16 y -62
-    // stopCmd();
-    // delay(100);
-    // servo_left.write(servo_def);
-    // delay(500);
-    // // p2ptrack(122, -5, 0); //x 16 y -62
-    // // stopCmd();
-    // // delay(100);
-    // p2ptrack(122, -5, 0); //x 16 y -62
-    // stopCmd();
-    // delay(100);
-    // rotatorControl(rotator_midpos, rotator_maxSpeed);
-    // writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    // delay(500);
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+    }
     while (1)
     {
       stopCmd();
@@ -507,7 +471,7 @@ void loop() {
     omniControl(spd, course, edit);
   }
 
-  void p2ptrack(float set_x, float set_y, float set_head, bool viaMode, int rPos)
+  void p2ptrack(float set_x, float set_y, float set_head, bool viaMode=false)
   {
 
     static volatile float s_prev_error = 0.0f;
@@ -597,16 +561,6 @@ void loop() {
       }
 
       omniControl(s_edit, compensateTht, h_edit);
-      if (millis() - last_time >= 100)
-      {
-          last_time = millis();
-          if (millis() - feedingTime > 300)
-          {
-            rotatorControl(rPos, rotator_maxSpeed);
-          } else {
-          writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-          }
-      }
       // headingControl(s_edit, compensateTht, set_head);
       }
   }
@@ -677,51 +631,59 @@ void loop() {
     }
   }
 
-  void rotatorControl(int position, int speed)
+  void rotatorControl()
   {
-    while (1) {
-      int feedback = analogRead(feedback_poten);
-      // Serial.println(feedback- position);
-      if (abs(feedback - position) > 4)
-      {
-        r_error = feedback - position;
-      }
-      else
-      {
-        r_error = 0;
-        r_prev_error = 0;
-      }
-      r_p = r_Kp * r_error;
-      r_d = (r_error - r_prev_error) * r_Kd;
-      r_prev_error = r_error;
-      r_edit = r_p + r_d;
-      if (r_edit > rotator_maxSpeed)
-        r_edit = rotator_maxSpeed;
-      if (-r_edit < -rotator_maxSpeed)
-        r_edit = -rotator_maxSpeed;
-      if (r_edit == 0 && r_atTarget == false)
-      {
-        r_ontarget = millis();
-        r_atTarget = true;
-      }
-      else if (r_edit != 0)
-      {
-        r_atTarget = false;
-      }
-      if (millis() - r_ontarget > 500 && r_atTarget)
-      {
-        // atTarget = true;
+    while (true) {
+      
+      if (flagRotate == true) {
+        while (1)
+        {
+          // Serial.println("on");
+          // delay(100);
+          int feedback = analogRead(feedback_poten);
+          // Serial.println(feedback- position);
+          if (abs(feedback - rotatorPosition) > 4)
+          {
+            r_error = feedback - rotatorPosition;
+          }
+          else
+          {
+            r_error = 0;
+            r_prev_error = 0;
+          }
+          r_p = r_Kp * r_error;
+          r_d = (r_error - r_prev_error) * r_Kd;
+          r_prev_error = r_error;
+          r_edit = r_p + r_d;
+          if (r_edit > rotator_maxSpeed)
+            r_edit = rotator_maxSpeed;
+          if (-r_edit < -rotator_maxSpeed)
+            r_edit = -rotator_maxSpeed;
+          if (r_edit == 0 && r_atTarget == false)
+          {
+            r_ontarget = millis();
+            r_atTarget = true;
+          }
+          else if (r_edit != 0)
+          {
+            r_atTarget = false;
+          }
+          if (millis() - r_ontarget > 500 && r_atTarget)
+          {
+            // atTarget = true;
+            writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+            r_atTarget = false;
+            flagRotate = false;
+            break;
+          }
+          writeToRotator(r_edit, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
+        }
+        
+      }  else {
         writeToRotator(0, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
-        r_atTarget = false;
-        break;
       }
-      writeToRotator(r_edit, Dynamixel_rotate, cmdWrite, AddressMovingSpeed);
     }
-    
-    // Serial.println(r_edit);
-   
-    
-  }
+}
 
   void serialEvent1()
   {
