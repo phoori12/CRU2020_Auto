@@ -82,7 +82,7 @@ uint16_t feedingTime = 0;
 bool rotate_rdy =false;
 
 ////////////////////////////////////////////////////////////
-    ///////////////////// P2P Control Vars /////////////////////
+///////////////////// P2P Control Vars /////////////////////
 float mapgyro;
 float d_i = 0;
 const float s_kp = 77.0f, s_ki = 0.50f, s_kd = 24.0f;
@@ -123,7 +123,7 @@ void ENCBB_Read();
 void getRobotPosition();
 void omniControl(int spd, int alpha, int omega);
 void headingControl(int spd, int course, int set_head);
-void p2ptrack(float set_x, float set_y, float set_head);
+void p2ptrack(float set_x, float set_y, float set_head, bool viaMode=false);
 void sendDriveCmd(int spd1, int spd2, int spd3, int spd4);
 void stopCmd();
 void writeToFeeder(uint16_t data, uint8_t id, uint8_t instruction, uint8_t Address);
@@ -187,7 +187,12 @@ void setup()
   digitalWrite(13, HIGH);
   delay(100);
   /////////////////////////////
-//  rotatorTimer.begin(rotatorInterval, 10000);
+  /////////////// Set 0 Dynamixel ///////////////
+  rotatorControl(rotator_midpos, rotator_maxSpeed);
+  writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+  delay(500);
+  //////////////////////////////////////////////
+  //  rotatorTimer.begin(rotatorInterval, 10000);
 }
 
 
@@ -199,20 +204,17 @@ void setup()
 
 // ลบหมุนขวา บวกหมุนซ้าย
 void loop() {
-    rotatorControl(rotator_midpos, rotator_maxSpeed);
-    writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    delay(500);
-    p2ptrack(16, -62, 0); //x 16 y -62
+    p2ptrack(16, -62, 0, true); //x 16 y -62
     stopCmd();
-    delay(100);
+    delay(50);
     //feedingTime = millis();
 
-    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    rotatorControl(rotator_rightpos, rotator_maxSpeed);
-    delay(500);
-    p2ptrack(25, -62, 0); //x 25 y -62
-    stopCmd();
-    delay(100);
+    // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    // rotatorControl(rotator_rightpos, rotator_maxSpeed);
+    // delay(500);
+    // p2ptrack(25, -62, 0); //x 25 y -62
+    // stopCmd();
+    // delay(100);
 
     while (digitalRead(limit_r))
     {
@@ -231,28 +233,28 @@ void loop() {
         break;
       }
     }
+    // stopCmd();
+    // delay(100);
+    // //rotatorControl(rotator_rightpos, rotator_maxSpeed);
+    // servo_right.write(servo_med);
+    // delay(500);
+    // servo_right.write(servo_max);
+    // delay(500);
+    // /////////////////////////////////////////////////////////////////
+    p2ptrack(4, -62, 0, true); //x 16 y -62
     stopCmd();
     delay(100);
-    //rotatorControl(rotator_rightpos, rotator_maxSpeed);
-    servo_right.write(servo_med);
-    delay(500);
-    servo_right.write(servo_max);
-    delay(500);
-    /////////////////////////////////////////////////////////////////
-    p2ptrack(14, -62, 0); //x 16 y -62
+    // servo_right.write(servo_def);
+    // delay(500);
+    // p2ptrack(13, -102, 0, true); //x 16 y -62
+    // stopCmd();
+    // delay(50);
+    // p2ptrack(58, -102, 0); //x 16 y -62
+    // stopCmd();
+    // delay(100);
+    p2ptrack(58, -115, 0); //x 16 y -62
     stopCmd();
-    delay(100);
-    servo_right.write(servo_def);
-    delay(500);
-    p2ptrack(16, -102, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
-    p2ptrack(58, -102, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
-    p2ptrack(58, -98, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
+    delay(50);
     
     while (digitalRead(limit_f))
     {
@@ -274,28 +276,48 @@ void loop() {
     }
     stopCmd();
     delay(100);
-    writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    delay(500);
-    rotatorControl(rotator_midpos, rotator_maxSpeed);
-    servo_mid.write(servo_med);
-    delay(500);
-    servo_mid.write(servo_max);
-    delay(500);
-    /////////////////////////////////////////////////////////////////////////////////
-    p2ptrack(62, -110, 0); //x 16 y -62
+    while (digitalRead(limit_f))
+    {
+      getRobotPosition();
+      headingControl(1500, 90, 0);
+      if (od2 == 0 && !crash_status) { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      } else {
+        crash_status = false;
+      }
+
+      if (millis() - crash_time > crash_delay && crash_status) {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+
+    }
     stopCmd();
     delay(100);
-    servo_mid.write(servo_def);
-    delay(500);
-    p2ptrack(105, -110, 0); //x 16 y -62
+    // writeToFeeder(AXFeed_max, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    // delay(500);
+    // rotatorControl(rotator_midpos, rotator_maxSpeed);
+    // servo_mid.write(servo_med);
+    // delay(500);
+    // servo_mid.write(servo_max);
+    // delay(500);
+    // /////////////////////////////////////////////////////////////////////////////////
+    p2ptrack(62, -120, 0, true); //x 16 y -62
+    stopCmd();
+    delay(10);
+    // servo_mid.write(servo_def);
+    // delay(500);
+    // p2ptrack(105, -110, 0, true); //x 16 y -62
+    // stopCmd();
+    // delay(50);
+    p2ptrack(110, -65, 0); //x 16 y -62
     stopCmd();
     delay(100);
-    p2ptrack(105, -65, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
-    p2ptrack(95, -65, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
+    // p2ptrack(95, -65, 0); //x 16 y -62
+    // stopCmd();
+    // delay(100);
     while (digitalRead(limit_l))
     {
       getRobotPosition();
@@ -315,27 +337,71 @@ void loop() {
     }
     stopCmd();
     delay(100);
-    writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    delay(500);
-    rotatorControl(rotator_leftpos, rotator_maxSpeed);
-    servo_left.write(servo_med);
-    delay(500);
-    servo_left.write(servo_max);
-    delay(500);
-    p2ptrack(122, -65, 0); //x 16 y -62
+
+    while (digitalRead(object_r))
+    {
+      getRobotPosition();
+      headingControl(1500, 180, 0);
+      if (od1 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
+
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+    }
     stopCmd();
     delay(100);
-    servo_left.write(servo_def);
-    delay(500);
+
+    while (digitalRead(object_f))
+    {
+      getRobotPosition();
+      headingControl(1500, 100, 0);
+      if (od2 == 0 && !crash_status)
+      { // od2 for y axis
+        crash_time = millis();
+        crash_status = true;
+      }
+      else
+      {
+        crash_status = false;
+      }
+
+      if (millis() - crash_time > crash_delay && crash_status)
+      {
+        crash_time = 0;
+        crash_status = false;
+        break;
+      }
+    }
+    stopCmd();
+    delay(100);
+    // writeToFeeder(AXFeed_max - 50, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    // delay(500);
+    // rotatorControl(rotator_leftpos, rotator_maxSpeed);
+    // servo_left.write(servo_med);
+    // delay(500);
+    // servo_left.write(servo_max);
+    // delay(500);
+    // p2ptrack(122, -65, 0); //x 16 y -62
+    // stopCmd();
+    // delay(100);
+    // servo_left.write(servo_def);
+    // delay(500);
+    // // p2ptrack(122, -5, 0); //x 16 y -62
+    // // stopCmd();
+    // // delay(100);
     // p2ptrack(122, -5, 0); //x 16 y -62
     // stopCmd();
     // delay(100);
-    p2ptrack(122, -5, 0); //x 16 y -62
-    stopCmd();
-    delay(100);
-    rotatorControl(rotator_midpos, rotator_maxSpeed);
-    writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
-    delay(500);
+    // rotatorControl(rotator_midpos, rotator_maxSpeed);
+    // writeToFeeder(AXFeed_min, Dynamixel_feed, cmdWrite, AddressGoalPosition);
+    // delay(500);
     while (1)
     {
       stopCmd();
@@ -434,7 +500,7 @@ void loop() {
     omniControl(spd, course, edit);
   }
 
-  void p2ptrack(float set_x, float set_y, float set_head)
+  void p2ptrack(float set_x, float set_y, float set_head, bool viaMode=false)
   {
 
     static volatile float s_prev_error = 0.0f;
@@ -502,12 +568,13 @@ void loop() {
 
       if ((abs(dx) <= 3 && abs(dy) <= 3) && abs(h_error) <= gyro_accept)
       {
+
         if (atTarget == false)
         {
           targetTime = millis();
         }
         atTarget = true;
-        if (millis() - targetTime > 500)
+        if (millis() - targetTime > 500 || viaMode)
         {
           // atTarget = true;
           sendDriveCmd(0, 0, 0, 0);
