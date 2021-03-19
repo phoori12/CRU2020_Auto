@@ -94,9 +94,9 @@ long targetTime = 0;
 ////////////////////////////////////////////////////////////
 
 //////////////////////// Rotator PID ////////////////////////
-int rotator_leftpos = 712;
-int rotator_midpos = 758;
-int rotator_rightpos = 805; // 900
+int rotator_leftpos = 718;
+int rotator_midpos = 761;
+int rotator_rightpos = 802; // 900
 int rotator_maxSpeed = 400;
 
 float r_Kp = 10.0f, r_Kd = 2;
@@ -135,6 +135,7 @@ void setFeeder();
 void servoOff();
 void plan1Blue();
 void plan1Grey();
+void plan1Green();
 void plan2BlueGrey();
 void plan2GreyGreen();
 // void feederInterval();
@@ -235,9 +236,16 @@ void setup()
     while(!digitalRead(Eobject_r)) {}
   } else if (mode1 == 0 && mode2 == 1) {
     while (digitalRead(Eobject_m)){}
-  } else {
+  } else if (mode1 == 0 && mode2 == 0) {
+    feederPosition = AXFeed_max - 60;
+    delay(1000);
+    rotatorPosition = rotator_rightpos - 30;
+    while (digitalRead(Eobject_l)) {}
+  } else 
+  {
     while (digitalRead(Eobject_m) && !digitalRead(Eobject_r)){}
   }
+
   Serial1.write(0xA5); // set Gyro heading to 0
   Serial1.write(0x55);
   delay(1000);
@@ -266,9 +274,12 @@ void loop() {
     plan1Blue();
   } else if (mode1 == 0 && mode2 == 1) {
     plan1Grey();
-  } else {
+  } else if (mode1 == 0 && mode2 == 0) {
+    plan1Green();
+  }else {
     plan2BlueGrey();
   }
+
 
   // while(1) {
   //   getRobotPosition();
@@ -284,6 +295,105 @@ void loop() {
   }
 //  Serial.println(gyro_pos);
  // delay(10);
+}
+
+void plan1Green() {
+  p2ptrack(3, -62, 0, true); //x 16 y -62
+  stopCmd();
+  feederPosition = AXFeed_max;
+  p2ptrack(58, -115, 0, true); //x 16 y -62
+  rotatorPosition = rotator_leftpos;
+  stopCmd();
+  delay(50);
+  p2ptrack(110, -63, 0); //x 16 y -62
+  stopCmd();
+  delay(100);
+  while (digitalRead(limit_l))
+  {
+    getRobotPosition();
+    headingControl(1500, 0, 0);
+    if (od1 == 0 && !crash_status)
+    { // od2 for y axis
+      crash_time = millis();
+      crash_status = true;
+    }
+
+    if (millis() - crash_time > crash_delay && crash_status)
+    {
+      crash_time = 0;
+      crash_status = false;
+      break;
+    }
+  }
+  crash_time = 0;
+  crash_status = false;
+  stopCmd();
+  delay(100);
+  while (!rotateComplete)
+  {
+  }
+  rotateComplete = false;
+  delay(100);
+  for (int pos = 22; pos < servo_med - 35; pos = pos + 2)
+  {
+    servo_left.write(pos);
+    delay(10);
+  }
+  delay(100);
+  servo_left.write(servo_max);
+  delay(500);
+  p2ptrack(115, -50, 0, true); //x 16 y -62
+  stopCmd();
+  delay(10);
+  while (digitalRead(object_r))
+  {
+    getRobotPosition();
+    headingControl(2500, 180, 0);
+    if (od1 == 0 && !crash_status)
+    { // od2 for y axis
+      crash_time = millis();
+      crash_status = true;
+    }
+
+    if (millis() - crash_time > crash_delay && crash_status)
+    {
+      crash_time = 0;
+      crash_status = false;
+      break;
+    }
+  }
+  crash_time = 0;
+  crash_status = false;
+  stopCmd();
+  delay(10);
+  rotateComplete = false;
+  flagRotate = true;
+  rotatorPosition = rotator_midpos;
+
+  servo_off = true;
+
+  while (digitalRead(object_f))
+  {
+    getRobotPosition();
+    headingControl(2500, 100, 0);
+    if (od2 == 0 && !crash_status)
+    { // od2 for y axis
+      crash_time = millis();
+      crash_status = true;
+    }
+    else if (od2 != 0)
+    {
+      crash_status = false;
+    }
+
+    if (millis() - crash_time > crash_delay && crash_status)
+    {
+      crash_time = 0;
+      crash_status = false;
+      break;
+    }
+  }
+  feederPosition = AXFeed_min;
 }
 
 void plan1Grey() {
@@ -649,12 +759,12 @@ void plan2BlueGrey() {
   }
   rotateComplete = false;
   delay(100);
-  for (int pos = 22; pos < servo_med - 35; pos = pos + 2)
+  for (int pos = 22; pos < servo_med - 35; pos++)
   {
     servo_mid.write(pos);
-    delay(10);
+    delay(25);
   }
-  delay(300);
+  delay(400);
   servo_mid.write(servo_max);
   delay(500);
   // // /////////////////////////////////////////////////////////////////////////////////////
